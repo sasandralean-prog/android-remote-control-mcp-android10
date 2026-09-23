@@ -22,10 +22,12 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Build ngrok Java API jar
+      - name: Build ngrok Java API and native classes jars
         run: |
           cd vendor/ngrok-java
+          mvn compile -pl ngrok-java-native --also-make --global-toolchains toolchains.xml -q
           mvn package -pl ngrok-java -DskipTests --global-toolchains toolchains.xml -q
+          (cd ngrok-java-native/target/classes && jar cf ../ngrok-java-native-classes.jar com/)
         env:
           JAVA_11_HOME: ${{ env.JAVA_HOME }}
           JAVA_17_HOME: ${{ env.JAVA_HOME }}
