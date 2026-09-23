@@ -80,14 +80,13 @@ class TextInputToolsTest {
     private fun createMockSurroundingText(
         text: String,
         offset: Int = 0,
-    ): SurroundingText {
-        val mock = mockk<SurroundingText>()
-        every { mock.text } returns text
-        every { mock.offset } returns offset
-        every { mock.selectionStart } returns text.length
-        every { mock.selectionEnd } returns text.length
-        return mock
-    }
+    ): InputSurroundingText =
+        InputSurroundingText(
+            text = text,
+            selectionStart = text.length,
+            selectionEnd = text.length,
+            offset = offset,
+        )
 
     /**
      * Sets up mockTypeInputController to handle per-character verification.
