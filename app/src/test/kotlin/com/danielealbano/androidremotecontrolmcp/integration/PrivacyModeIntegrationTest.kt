@@ -8,7 +8,6 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.RectF
-import android.view.inputmethod.SurroundingText
 import com.danielealbano.androidremotecontrolmcp.data.model.PlaceholderFormat
 import com.danielealbano.androidremotecontrolmcp.data.model.PrivacyModeConfig
 import com.danielealbano.androidremotecontrolmcp.data.model.RedactionMode
@@ -21,6 +20,7 @@ import com.danielealbano.androidremotecontrolmcp.privacy.ner.NerResult
 import com.danielealbano.androidremotecontrolmcp.privacy.ner.NerSegment
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityNodeData
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.BoundsData
+import com.danielealbano.androidremotecontrolmcp.services.accessibility.InputSurroundingText
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.ScreenInfo
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.WindowData
 import com.danielealbano.androidremotecontrolmcp.services.notifications.NotificationData
@@ -422,12 +422,11 @@ class PrivacyModeIntegrationTest {
         return (result.content[0] as TextContent).text
     }
 
-    private fun mockSurroundingText(text: String): SurroundingText {
-        val mock = mockk<SurroundingText>()
-        every { mock.text } returns text
-        every { mock.offset } returns 0
-        every { mock.selectionStart } returns text.length
-        every { mock.selectionEnd } returns text.length
-        return mock
-    }
+    private fun mockSurroundingText(text: String): InputSurroundingText =
+        InputSurroundingText(
+            text = text,
+            selectionStart = text.length,
+            selectionEnd = text.length,
+            offset = 0,
+        )
 }

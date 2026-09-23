@@ -33,6 +33,8 @@ jobs:
           JAVA_17_HOME: ${{ env.JAVA_HOME }}
       - name: Android lint against minSdk 29
         run: ./gradlew :app:lintGmsDebug
+      - name: Android 10 port unit tests
+        run: ./gradlew :app:testGmsDebugUnitTest
       - name: Upload lint reports
         if: always()
         uses: actions/upload-artifact@v7

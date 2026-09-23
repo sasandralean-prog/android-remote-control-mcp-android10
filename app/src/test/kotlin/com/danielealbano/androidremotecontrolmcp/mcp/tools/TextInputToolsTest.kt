@@ -2,10 +2,8 @@
 
 package com.danielealbano.androidremotecontrolmcp.mcp.tools
 
-import android.os.Bundle
 import android.view.accessibility.AccessibilityNodeInfo
 import android.view.accessibility.AccessibilityWindowInfo
-import android.view.inputmethod.SurroundingText
 import com.danielealbano.androidremotecontrolmcp.mcp.McpToolException
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityNodeCache
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityNodeData
@@ -13,6 +11,7 @@ import com.danielealbano.androidremotecontrolmcp.services.accessibility.Accessib
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.AccessibilityTreeParser
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.ActionExecutor
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.BoundsData
+import com.danielealbano.androidremotecontrolmcp.services.accessibility.InputSurroundingText
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.TypeInputController
 import com.danielealbano.androidremotecontrolmcp.services.accessibility.WindowData
 import com.danielealbano.androidremotecontrolmcp.testutil.PrivacyToolTestDoubles
@@ -309,34 +308,34 @@ class TextInputToolsTest {
         }
 
         @Test
-        fun `awaitInputConnectionReady succeeds when ready immediately`() =
+        fun `awaitTextControllerReady succeeds when ready immediately`() =
             runTest {
                 every { mockTypeInputController.isReady() } returns true
 
                 // Should not throw
-                awaitInputConnectionReady(mockTypeInputController, "test_element")
+                awaitTextControllerReady(mockTypeInputController, "test_element")
             }
 
         @Test
-        fun `awaitInputConnectionReady succeeds after retry`() =
+        fun `awaitTextControllerReady succeeds after retry`() =
             runTest {
                 every { mockTypeInputController.isReady() } returnsMany listOf(false, false, true)
 
                 // Should not throw
-                awaitInputConnectionReady(mockTypeInputController, "test_element")
+                awaitTextControllerReady(mockTypeInputController, "test_element")
             }
 
         @Test
-        fun `awaitInputConnectionReady fails after timeout`() =
+        fun `awaitTextControllerReady fails after timeout`() =
             runTest {
                 // Note: this test consumes ~500ms real wall-clock time
                 every { mockTypeInputController.isReady() } returns false
 
                 val exception =
                     assertThrows<McpToolException.ActionFailed> {
-                        awaitInputConnectionReady(mockTypeInputController, "test_element")
+                        awaitTextControllerReady(mockTypeInputController, "test_element")
                     }
-                assertTrue(exception.message!!.contains("Input connection not available"))
+                assertTrue(exception.message!!.contains("Text controller not available"))
             }
 
         @Test
@@ -818,7 +817,7 @@ class TextInputToolsTest {
                     }
 
                 val exception = assertThrows<McpToolException.ActionFailed> { tool.execute(params) }
-                assertTrue(exception.message!!.contains("Input connection not available"))
+                assertTrue(exception.message!!.contains("Text controller not available"))
             }
 
         @Test
@@ -1541,7 +1540,7 @@ class TextInputToolsTest {
                 val params = buildJsonObject { put("node_id", "node_edit") }
 
                 val exception = assertThrows<McpToolException.ActionFailed> { tool.execute(params) }
-                assertTrue(exception.message!!.contains("Input connection not available"))
+                assertTrue(exception.message!!.contains("Text controller not available"))
             }
 
         @Test
@@ -1583,7 +1582,12 @@ class TextInputToolsTest {
     @Nested
     @DisplayName("PressKeyTool")
     inner class PressKeyToolTests {
-        private val tool = PressKeyTool(mockActionExecutor, mockAccessibilityServiceProvider)
+        private val tool =
+            PressKeyTool(
+                mockActionExecutor,
+                mockAccessibilityServiceProvider,
+                mockTypeInputController,
+            )
 
         @Test
         fun `presses BACK key`() =
@@ -1608,62 +1612,29 @@ class TextInputToolsTest {
             }
 
         @Test
-        fun `presses DEL key removes last character`() =
+        fun `presses DEL key through text controller`() =
             runTest {
-                every { mockAccessibilityServiceProvider.getRootNode() } returns mockRootNode
-                @Suppress("DEPRECATION")
-                every { mockRootNode.recycle() } returns Unit
-                every { mockRootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) } returns mockFocusedNode
-                every { mockFocusedNode.isEditable } returns true
-                every { mockFocusedNode.text } returns "Hello"
-                every { mockFocusedNode.performAction(any(), any<Bundle>()) } returns true
-                every { mockFocusedNode.recycle() } returns Unit
+                every { mockTypeInputController.isReady() } returns true
+                every { mockTypeInputController.sendKeyEvent(any()) } returns true
                 val params = buildJsonObject { put("key", "DEL") }
 
                 val result = tool.execute(params)
                 val text = extractTextContent(result)
                 assertTrue(text.contains("DEL"))
+                verify(exactly = 2) { mockTypeInputController.sendKeyEvent(any()) }
             }
 
         @Test
-        fun `clears the framework node cache before locating the focused node`() =
+        fun `presses SPACE key through text controller`() =
             runTest {
-                // press_key DEL/TAB/SPACE read the focused node's text to build ACTION_SET_TEXT; on a
-                // JS-mutated WebView input that text would be stale without clearing the framework
-                // cache first, corrupting the field. The clear MUST precede the tree read.
-                @Suppress("DEPRECATION")
-                every { mockRootNode.recycle() } returns Unit
-                every { mockRootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) } returns mockFocusedNode
-                every { mockFocusedNode.isEditable } returns true
-                every { mockFocusedNode.text } returns "Hello"
-                every { mockFocusedNode.performAction(any(), any<Bundle>()) } returns true
-                every { mockFocusedNode.recycle() } returns Unit
-                val params = buildJsonObject { put("key", "DEL") }
-
-                tool.execute(params)
-
-                verifyOrder {
-                    mockAccessibilityServiceProvider.clearFrameworkNodeCache()
-                    mockAccessibilityServiceProvider.getAccessibilityWindows()
-                }
-            }
-
-        @Test
-        fun `presses SPACE key appends space`() =
-            runTest {
-                every { mockAccessibilityServiceProvider.getRootNode() } returns mockRootNode
-                @Suppress("DEPRECATION")
-                every { mockRootNode.recycle() } returns Unit
-                every { mockRootNode.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) } returns mockFocusedNode
-                every { mockFocusedNode.isEditable } returns true
-                every { mockFocusedNode.text } returns "Hello"
-                every { mockFocusedNode.performAction(any(), any<Bundle>()) } returns true
-                every { mockFocusedNode.recycle() } returns Unit
+                every { mockTypeInputController.isReady() } returns true
+                every { mockTypeInputController.commitText(" ", 1) } returns true
                 val params = buildJsonObject { put("key", "SPACE") }
 
                 val result = tool.execute(params)
                 val text = extractTextContent(result)
                 assertTrue(text.contains("SPACE"))
+                verify(exactly = 1) { mockTypeInputController.commitText(" ", 1) }
             }
 
         @Test

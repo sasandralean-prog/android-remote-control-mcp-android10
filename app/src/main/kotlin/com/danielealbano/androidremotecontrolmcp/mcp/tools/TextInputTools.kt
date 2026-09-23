@@ -3,7 +3,6 @@
 package com.danielealbano.androidremotecontrolmcp.mcp.tools
 
 import android.os.Build
-import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityNodeInfo
@@ -327,7 +326,7 @@ internal fun validateTextLength(
 /**
  * Polls for TypeInputController readiness after clicking a node to focus it.
  * Uses a poll-retry loop instead of a fixed delay to minimize unnecessary waiting
- * while still giving the framework time to establish the InputConnection.
+ * while still giving the framework time to expose the focused editable node.
  *
  * Uses wall-clock time (`System.currentTimeMillis()`) for accurate timeout
  * tracking, since `delay()` is a suspension point and may resume later than
@@ -341,7 +340,7 @@ internal fun validateTextLength(
  * @param nodeId The node ID (for error message).
  * @throws McpToolException.ActionFailed if not ready after FOCUS_POLL_MAX_MS.
  */
-internal suspend fun awaitInputConnectionReady(
+internal suspend fun awaitTextControllerReady(
     typeInputController: TypeInputController,
     nodeId: String,
 ) {
@@ -351,7 +350,7 @@ internal suspend fun awaitInputConnectionReady(
         delay(FOCUS_POLL_INTERVAL_MS)
     }
     throw McpToolException.ActionFailed(
-        "Input connection not available after focusing node '$nodeId'. " +
+        "Text controller not available after focusing node '$nodeId'. " +
             "The node may not be an editable text field.",
     )
 }
@@ -414,7 +413,7 @@ class TypeAppendTextTool
                     clickResult.onFailure { e -> mapNodeActionException(e, nodeId) }
 
                     // Poll-retry for InputConnection readiness (max 500ms, 50ms interval)
-                    awaitInputConnectionReady(typeInputController, nodeId)
+                    awaitTextControllerReady(typeInputController, nodeId)
 
                     // Position cursor at end
                     // Note: offset + text.length gives the total text length only if
@@ -461,7 +460,7 @@ class TypeAppendTextTool
                 name = "$toolNamePrefix$TOOL_NAME",
                 description =
                     "Type text character by character at the end of a text field. " +
-                        "Uses natural InputConnection typing (indistinguishable from keyboard input). " +
+                        "Uses the platform text-input controller; Android 10 uses accessibility text actions. " +
                         "Maximum text length: $MAX_TEXT_LENGTH characters. " +
                         "For text longer than $MAX_TEXT_LENGTH chars, call this tool multiple times — " +
                         "subsequent calls continue typing at the current cursor position. " +
@@ -553,7 +552,7 @@ class TypeInsertTextTool
                     clickResult.onFailure { e -> mapNodeActionException(e, nodeId) }
 
                     // Poll-retry for InputConnection readiness
-                    awaitInputConnectionReady(typeInputController, nodeId)
+                    awaitTextControllerReady(typeInputController, nodeId)
 
                     // Validate offset against current text length
                     val surroundingText =
@@ -605,7 +604,7 @@ class TypeInsertTextTool
                 name = "$toolNamePrefix$TOOL_NAME",
                 description =
                     "Type text character by character at a specific position in a text field. " +
-                        "Uses natural InputConnection typing (indistinguishable from keyboard input). " +
+                        "Uses the platform text-input controller; Android 10 uses accessibility text actions. " +
                         "Maximum text length: $MAX_TEXT_LENGTH characters. " +
                         verificationAndKeyboardHint(toolNamePrefix),
                 inputSchema =
@@ -735,7 +734,7 @@ class TypeReplaceTextTool
                     clickResult.onFailure { e -> mapNodeActionException(e, nodeId) }
 
                     // Poll-retry for InputConnection readiness
-                    awaitInputConnectionReady(typeInputController, nodeId)
+                    awaitTextControllerReady(typeInputController, nodeId)
 
                     // Get current text and find the search string
                     val surroundingText =
@@ -816,7 +815,7 @@ class TypeReplaceTextTool
                 description =
                     "Find and replace text in a field by typing the replacement naturally. " +
                         "Finds the first occurrence of search text, deletes it, then types new_text " +
-                        "character by character via InputConnection. " +
+                        "character by character through the platform text-input controller. " +
                         "Maximum new_text length: $MAX_TEXT_LENGTH characters. " +
                         "Returns error if search text is not found. " +
                         verificationAndKeyboardHint(toolNamePrefix),
@@ -914,7 +913,7 @@ class TypeClearTextTool
                     clickResult.onFailure { e -> mapNodeActionException(e, nodeId) }
 
                     // Poll-retry for InputConnection readiness
-                    awaitInputConnectionReady(typeInputController, nodeId)
+                    awaitTextControllerReady(typeInputController, nodeId)
 
                     // Check if field has text — skip clear if already empty
                     val surroundingText =
@@ -976,7 +975,7 @@ class TypeClearTextTool
                 name = "$toolNamePrefix$TOOL_NAME",
                 description =
                     "Clear all text from a field naturally using select-all + delete. " +
-                        "Uses InputConnection operations (indistinguishable from user action). " +
+                        "Uses the platform text-input controller, with an Android 10 accessibility fallback. " +
                         verificationAndKeyboardHint(toolNamePrefix),
                 inputSchema =
                     ToolSchema(
@@ -1006,14 +1005,15 @@ class TypeClearTextTool
  * Key mapping strategy:
  * - BACK, HOME: Delegate to ActionExecutor global actions (already implemented).
  * - ENTER: Use ACTION_IME_ENTER.
- * - DEL: Get current text from focused node, remove last character, set text.
- * - TAB, SPACE: Get current text from focused node, append character, set text.
+ * - DEL: Delegate to [TypeInputController] so cursor/selection semantics match text tools.
+ * - TAB, SPACE: Commit through [TypeInputController], including the API 29 compatibility path.
  */
 class PressKeyTool
     @Inject
     constructor(
         private val actionExecutor: ActionExecutor,
         private val accessibilityServiceProvider: AccessibilityServiceProvider,
+        private val typeInputController: TypeInputController,
     ) {
         @Suppress("ThrowsCount")
         suspend fun execute(arguments: JsonObject?): CallToolResult {
@@ -1048,15 +1048,15 @@ class PressKeyTool
                 }
 
                 "DEL" -> {
-                    pressDelete()
+                    typeOperationMutex.withLock { pressDelete() }
                 }
 
                 "TAB" -> {
-                    appendCharToFocused('\t')
+                    typeOperationMutex.withLock { appendCharToFocused('\t') }
                 }
 
                 "SPACE" -> {
-                    appendCharToFocused(' ')
+                    typeOperationMutex.withLock { appendCharToFocused(' ') }
                 }
             }
 
@@ -1087,58 +1087,27 @@ class PressKeyTool
         }
 
         private fun pressDelete() {
-            val focusedNode =
-                findFocusedEditableNode(accessibilityServiceProvider)
-                    ?: throw McpToolException.NodeNotFound(
-                        "No focused editable node found for DEL key",
-                    )
-
-            try {
-                val currentText = focusedNode.text?.toString() ?: ""
-                if (currentText.isNotEmpty()) {
-                    val newText = currentText.dropLast(1)
-                    val arguments =
-                        Bundle().apply {
-                            putCharSequence(
-                                AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                                newText,
-                            )
-                        }
-                    val success = focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                    if (!success) {
-                        throw McpToolException.ActionFailed("DEL key action failed")
-                    }
-                }
-                // If text is already empty, DEL is a no-op (not an error)
-            } finally {
-                @Suppress("DEPRECATION")
-                focusedNode.recycle()
+            if (!typeInputController.isReady()) {
+                throw McpToolException.NodeNotFound(
+                    "No focused editable node found for DEL key",
+                )
+            }
+            if (!typeInputController.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DEL))) {
+                throw McpToolException.ActionFailed("DEL key action failed")
+            }
+            if (!typeInputController.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DEL))) {
+                throw McpToolException.ActionFailed("DEL key release failed")
             }
         }
 
         private fun appendCharToFocused(char: Char) {
-            val focusedNode =
-                findFocusedEditableNode(accessibilityServiceProvider)
-                    ?: throw McpToolException.NodeNotFound(
-                        "No focused editable node found for key input",
-                    )
-
-            try {
-                val currentText = focusedNode.text?.toString() ?: ""
-                val arguments =
-                    Bundle().apply {
-                        putCharSequence(
-                            AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE,
-                            currentText + char,
-                        )
-                    }
-                val success = focusedNode.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments)
-                if (!success) {
-                    throw McpToolException.ActionFailed("Key input action failed")
-                }
-            } finally {
-                @Suppress("DEPRECATION")
-                focusedNode.recycle()
+            if (!typeInputController.isReady()) {
+                throw McpToolException.NodeNotFound(
+                    "No focused editable node found for key input",
+                )
+            }
+            if (!typeInputController.commitText(char.toString(), 1)) {
+                throw McpToolException.ActionFailed("Key input action failed")
             }
         }
 
@@ -1242,7 +1211,8 @@ fun registerTextInputTools(
         ).register(registrar, toolNamePrefix)
     }
     if (perms.isToolEnabled(PressKeyTool.TOOL_NAME)) {
-        PressKeyTool(actionExecutor, accessibilityServiceProvider).register(registrar, toolNamePrefix)
+        PressKeyTool(actionExecutor, accessibilityServiceProvider, typeInputController)
+            .register(registrar, toolNamePrefix)
     }
 }
 

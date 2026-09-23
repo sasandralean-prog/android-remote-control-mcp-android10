@@ -12,8 +12,8 @@ import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.util.DisplayMetrics
 import android.util.Log
-import android.view.Display
 import android.view.Gravity
 import android.view.View
 import android.view.WindowManager
@@ -210,8 +210,15 @@ class McpAccessibilityService : AccessibilityService() {
      *
      * @return [ScreenInfo] with width, height, densityDpi, and orientation.
      */
+    @Suppress("DEPRECATION")
     fun getScreenInfo(): ScreenInfo {
-        val displayMetrics = resources.displayMetrics
+        // Accessibility node bounds and gesture coordinates use physical display coordinates.
+        // resources.displayMetrics may report only the app's usable area on Android 10
+        // (excluding status/navigation bars), which makes the reported screen size inconsistent
+        // with node bounds. Real display metrics keep both coordinate spaces aligned.
+        val displayMetrics = DisplayMetrics()
+        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        windowManager.defaultDisplay.getRealMetrics(displayMetrics)
         val width = displayMetrics.widthPixels
         val height = displayMetrics.heightPixels
         val densityDpi = displayMetrics.densityDpi

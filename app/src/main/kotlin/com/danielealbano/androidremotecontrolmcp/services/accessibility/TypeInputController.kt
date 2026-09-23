@@ -3,30 +3,21 @@ package com.danielealbano.androidremotecontrolmcp.services.accessibility
 import android.view.KeyEvent
 
 /**
- * Abstraction over AccessibilityInputConnection operations for natural text input.
- * Wraps the InputMethod API (API 33+) provided by the AccessibilityService
- * with FLAG_INPUT_METHOD_EDITOR.
+ * Platform-neutral text editing abstraction used by MCP text tools.
  *
- * Implementations access the real AccessibilityInputConnection via
- * McpAccessibilityService's InputMethod instance.
+ * On Android 13+ this contract can be implemented with the accessibility input-method
+ * bridge. The Android 10 port implements the same semantics with focused
+ * [android.view.accessibility.AccessibilityNodeInfo] actions such as ACTION_SET_TEXT
+ * and ACTION_SET_SELECTION.
  *
- * **Threading**: The AccessibilityInputConnection obtained from InputMethod is an
- * IPC proxy managed by the accessibility framework — it is NOT a View-bound
- * InputConnection. Methods can be called from any thread safely.
- * If runtime testing reveals thread-safety issues, the interface methods would
- * need to be changed to `suspend` to enable `withContext(Dispatchers.Main)`.
+ * **Concurrency**: Text-tool mutations are serialized by `typeOperationMutex` in
+ * TextInputTools.kt. Implementations may therefore keep short-lived cursor/selection
+ * compatibility state for widgets that expose editable text but reject selection actions.
  *
- * **Concurrency**: All mutating operations are serialized via a file-level Mutex
- * (`typeOperationMutex` in TextInputTools.kt) at the tool layer, preventing
- * concurrent MCP requests from interleaving character commits.
- *
- * **Return values**: The underlying `AccessibilityInputConnection` mutating methods
- * (`commitText`, `setSelection`, `performContextMenuAction`, `sendKeyEvent`,
- * `deleteSurroundingText`) return `void` in the Android framework. The `Boolean`
- * return on this interface indicates IC **availability** (true = IC was non-null
- * and the call was dispatched), NOT whether the target field accepted the
- * operation. Silent rejection by the target app (e.g., input filters, maxLength)
- * is undetectable via this interface.
+ * **Return values**: `true` means the controller accepted/dispatched the requested
+ * operation. Implementations may emulate an operation when the platform lacks a direct
+ * equivalent, but must return `false` when no editable target is available or the text
+ * mutation itself could not be performed.
  */
 data class InputSurroundingText(
     val text: CharSequence,
@@ -37,19 +28,17 @@ data class InputSurroundingText(
 
 interface TypeInputController {
     /**
-     * Returns true if the input connection is available
-     * (accessibility service connected, text field focused, input started).
+     * Returns true when an editable accessibility target is focused and ready for text operations.
      */
     fun isReady(): Boolean
 
     /**
      * Commits a single character or text to the focused text field.
-     * Delegates to AccessibilityInputConnection.commitText().
      *
      * @param text The text to commit.
      * @param newCursorPosition Cursor position relative to the committed text.
      *   1 = after the text (most common for typing).
-     * @return true if the IC was available and the call was dispatched, false if IC unavailable.
+     * @return true if the edit was dispatched/emulated, false if no editable target is available.
      */
     fun commitText(
         text: CharSequence,
@@ -62,7 +51,7 @@ interface TypeInputController {
      *
      * @param start Selection start (0-based character index).
      * @param end Selection end (0-based character index).
-     * @return true if the IC was available and the call was dispatched, false if IC unavailable.
+     * @return true if the selection was applied or emulated, false if unavailable/invalid.
      */
     fun setSelection(
         start: Int,
@@ -74,8 +63,8 @@ interface TypeInputController {
      *
      * @param beforeLength Characters to retrieve before cursor.
      * @param afterLength Characters to retrieve after cursor.
-     * @param flags 0 or InputConnection.GET_TEXT_WITH_STYLES.
-     * @return SurroundingText, or null if unavailable.
+     * @param flags Compatibility flags; implementations may ignore unsupported styling flags.
+     * @return Current surrounding text snapshot, or null if unavailable.
      */
     fun getSurroundingText(
         beforeLength: Int,
@@ -88,7 +77,7 @@ interface TypeInputController {
      * Used for select-all (android.R.id.selectAll).
      *
      * @param id The context menu action ID (e.g., android.R.id.selectAll).
-     * @return true if the IC was available and the call was dispatched, false if IC unavailable.
+     * @return true if the action was applied or emulated, false if unavailable/unsupported.
      */
     fun performContextMenuAction(id: Int): Boolean
 
@@ -97,7 +86,7 @@ interface TypeInputController {
      * Used for DELETE key after selection.
      *
      * @param event The KeyEvent to send.
-     * @return true if the IC was available and the call was dispatched, false if IC unavailable.
+     * @return true if the key action was applied/emulated, false if unavailable/unsupported.
      */
     fun sendKeyEvent(event: KeyEvent): Boolean
 
@@ -107,7 +96,7 @@ interface TypeInputController {
      *
      * @param beforeLength Characters to delete before cursor.
      * @param afterLength Characters to delete after cursor.
-     * @return true if the IC was available and the call was dispatched, false if IC unavailable.
+     * @return true if the deletion was applied/emulated, false if unavailable.
      */
     fun deleteSurroundingText(
         beforeLength: Int,
