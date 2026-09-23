@@ -2,7 +2,6 @@ package com.danielealbano.androidremotecontrolmcp.services.accessibility
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
-import android.accessibilityservice.InputMethod
 import android.content.ComponentCallbacks2
 import android.content.Context
 import android.content.res.Configuration
@@ -10,6 +9,7 @@ import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -29,10 +29,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.withTimeoutOrNull
-import java.util.concurrent.Executor
-import kotlin.coroutines.resume
 
 @Suppress("TooManyFunctions")
 class McpAccessibilityService : AccessibilityService() {
@@ -135,7 +131,6 @@ class McpAccessibilityService : AccessibilityService() {
         serviceScope = null
         currentPackageName = null
         currentActivityName = null
-        inputMethodInstance = null
         removeToolCallIndicator()
         instance = null
 
@@ -216,13 +211,9 @@ class McpAccessibilityService : AccessibilityService() {
      * @return [ScreenInfo] with width, height, densityDpi, and orientation.
      */
     fun getScreenInfo(): ScreenInfo {
-        val windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        val metrics = windowManager.currentWindowMetrics
-        val bounds = metrics.bounds
-        val width = bounds.width()
-        val height = bounds.height()
-
         val displayMetrics = resources.displayMetrics
+        val width = displayMetrics.widthPixels
+        val height = displayMetrics.heightPixels
         val densityDpi = displayMetrics.densityDpi
 
         val orientation =
@@ -237,12 +228,6 @@ class McpAccessibilityService : AccessibilityService() {
             densityDpi = densityDpi,
             orientation = orientation,
         )
-    }
-
-    override fun onCreateInputMethod(): InputMethod {
-        val method = McpInputMethod(this)
-        inputMethodInstance = method
-        return method
     }
 
     private fun showToolCallIndicatorInternal(toolName: String) {
@@ -306,8 +291,7 @@ class McpAccessibilityService : AccessibilityService() {
                     AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
                 feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
                 flags = AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS or
-                    AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS or
-                    AccessibilityServiceInfo.FLAG_INPUT_METHOD_EDITOR
+                    AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
                 notificationTimeout = NOTIFICATION_TIMEOUT_MS
             }
         if (serviceInfo == null) {
@@ -337,57 +321,23 @@ class McpAccessibilityService : AccessibilityService() {
      * @param timeoutMs Maximum time to wait for screenshot capture.
      * @return Bitmap of the screenshot, or null if capture failed or timed out.
      */
-    suspend fun takeScreenshotBitmap(timeoutMs: Long = SCREENSHOT_TIMEOUT_MS): Bitmap? =
-        withTimeoutOrNull(timeoutMs) {
-            suspendCancellableCoroutine { continuation ->
-                val executor = Executor { it.run() }
-                val callback =
-                    object : TakeScreenshotCallback {
-                        override fun onSuccess(screenshot: ScreenshotResult) {
-                            val bitmap =
-                                Bitmap.wrapHardwareBuffer(
-                                    screenshot.hardwareBuffer,
-                                    screenshot.colorSpace,
-                                )
-                            screenshot.hardwareBuffer.close()
-                            if (continuation.isActive) {
-                                continuation.resume(bitmap)
-                            }
-                        }
-
-                        override fun onFailure(errorCode: Int) {
-                            Log.e(TAG, "Screenshot failed with error code: $errorCode")
-                            if (continuation.isActive) {
-                                continuation.resume(null)
-                            }
-                        }
-                    }
-
-                takeScreenshot(Display.DEFAULT_DISPLAY, executor, callback)
-            }
-        }
-
-    /**
-     * Returns true if screenshot capability is available. Always true on minSdk 33+.
-     */
-    @Suppress("FunctionOnlyReturningConstant")
-    fun canTakeScreenshot(): Boolean = true
-
-    /**
-     * Drops the framework's accessibility node cache for this service via [clearCache] (public
-     * since API 33; minSdk is 33). See [AccessibilityServiceProvider.clearFrameworkNodeCache] for
-     * why this is needed to defeat stale WebView reads after JavaScript DOM changes.
-     *
-     * This is distinct from [invalidateCache], which flushes our own id→node [nodeCache]; this
-     * clears the framework-side cache that backs [rootInActiveWindow]/[getWindows] traversal.
-     */
-    fun clearFrameworkNodeCache() {
-        clearCache()
+    suspend fun takeScreenshotBitmap(timeoutMs: Long = SCREENSHOT_TIMEOUT_MS): Bitmap? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return null
+        return Api30ScreenshotCapture.capture(this, timeoutMs)
     }
 
-    class McpInputMethod(
-        service: AccessibilityService,
-    ) : InputMethod(service)
+    /** Screenshot capture through AccessibilityService is available from Android 11. */
+    fun canTakeScreenshot(): Boolean = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+
+    /**
+     * Drops the framework accessibility-node cache when the public API exists.
+     * Android 10 keeps using the normal event-driven application cache invalidation.
+     */
+    fun clearFrameworkNodeCache() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Api33AccessibilityCompat.clearFrameworkCache(this)
+        }
+    }
 
     companion object {
         private const val TAG = "MCP:AccessibilityService"
@@ -417,10 +367,6 @@ class McpAccessibilityService : AccessibilityService() {
          */
         @Volatile
         var instance: McpAccessibilityService? = null
-            private set
-
-        @Volatile
-        var inputMethodInstance: McpInputMethod? = null
             private set
 
         fun showToolCallIndicator(toolName: String) {

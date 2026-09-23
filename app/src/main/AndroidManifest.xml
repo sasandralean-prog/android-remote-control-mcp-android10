@@ -8,7 +8,6 @@
 
     <!-- Foreground services -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <!-- Boot receiver -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -91,11 +90,7 @@
         <service
             android:name=".services.mcp.McpServerService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="MCP server providing remote device control" />
-        </service>
+            android:foregroundServiceType="dataSync" />
 
         <!-- Accessibility Service -->
         <service

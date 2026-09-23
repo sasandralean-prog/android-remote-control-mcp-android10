@@ -2,6 +2,7 @@
 
 package com.danielealbano.androidremotecontrolmcp.mcp.tools
 
+import android.os.Build
 import android.os.Bundle
 import android.util.Log
 import android.view.KeyEvent
@@ -1071,11 +1072,12 @@ class PressKeyTool
                     )
 
             try {
-                val success =
-                    focusedNode.performAction(
-                        AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id,
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+                    throw McpToolException.ActionFailed(
+                        "ENTER accessibility action requires Android 11 or newer; tap the UI submit action instead",
                     )
-                if (!success) {
+                }
+                if (!Api30TextActions.performImeEnter(focusedNode)) {
                     throw McpToolException.ActionFailed("ENTER key action failed")
                 }
             } finally {

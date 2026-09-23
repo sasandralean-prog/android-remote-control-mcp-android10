@@ -1,6 +1,5 @@
 package com.danielealbano.androidremotecontrolmcp.services.mcp
 
-import android.app.ForegroundServiceStartNotAllowedException
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -49,8 +48,11 @@ internal fun restartMcpServer(context: Context) {
 private fun restartMcpServerSwallowingFgs(context: Context) {
     try {
         restartMcpServer(context)
-    } catch (e: ForegroundServiceStartNotAllowedException) {
-        Log.w(TAG, "Cannot restart MCP server: foreground start not allowed (app not battery-exempt)", e)
+    } catch (e: IllegalStateException) {
+        // Android 12+ throws ForegroundServiceStartNotAllowedException (an IllegalStateException)
+        // when a background FGS start is rejected. Catching the base type keeps this code
+        // loadable on Android 10, where that exception class does not exist.
+        Log.w(TAG, "Cannot restart MCP server from current app state", e)
     }
 }
 

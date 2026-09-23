@@ -1,13 +1,13 @@
 package com.danielealbano.androidremotecontrolmcp.services.location
 
 import android.content.Context
-import android.location.Address
 import android.location.Geocoder
+import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Locale
-import kotlin.coroutines.resume
 
 private const val TAG = "MCP:ReverseGeocoder"
 
@@ -23,22 +23,10 @@ internal suspend fun reverseGeocode(
         return null
     }
     return try {
-        suspendCancellableCoroutine { cont ->
-            Geocoder(context, Locale.getDefault()).getFromLocation(
-                latitude,
-                longitude,
-                1,
-                object : Geocoder.GeocodeListener {
-                    override fun onGeocode(addresses: List<Address>) {
-                        cont.resume(addresses.firstOrNull()?.getAddressLine(0))
-                    }
-
-                    override fun onError(errorMessage: String?) {
-                        Log.d(TAG, "Geocoder onError: $errorMessage")
-                        cont.resume(null)
-                    }
-                },
-            )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            Api33ReverseGeocoder.reverseGeocode(context, latitude, longitude)
+        } else {
+            reverseGeocodeLegacy(context, latitude, longitude)
         }
     } catch (e: CancellationException) {
         throw e
@@ -47,3 +35,16 @@ internal suspend fun reverseGeocode(
         null
     }
 }
+
+@Suppress("DEPRECATION")
+private suspend fun reverseGeocodeLegacy(
+    context: Context,
+    latitude: Double,
+    longitude: Double,
+): String? =
+    withContext(Dispatchers.IO) {
+        Geocoder(context, Locale.getDefault())
+            .getFromLocation(latitude, longitude, 1)
+            ?.firstOrNull()
+            ?.getAddressLine(0)
+    }

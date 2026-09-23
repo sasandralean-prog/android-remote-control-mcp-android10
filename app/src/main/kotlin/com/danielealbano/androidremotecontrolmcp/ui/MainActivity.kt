@@ -1,6 +1,7 @@
 package com.danielealbano.androidremotecontrolmcp.ui
 
 import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -97,7 +98,11 @@ class MainActivity : ComponentActivity() {
      * Requests the POST_NOTIFICATIONS runtime permission.
      */
     private fun requestNotificationPermission() {
-        notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        } else {
+            viewModel.refreshPermissionStatus(this)
+        }
     }
 
     /**

@@ -1,7 +1,6 @@
 package com.danielealbano.androidremotecontrolmcp.services.accessibility
 
 import android.view.KeyEvent
-import android.view.inputmethod.SurroundingText
 
 /**
  * Abstraction over AccessibilityInputConnection operations for natural text input.
@@ -29,6 +28,13 @@ import android.view.inputmethod.SurroundingText
  * operation. Silent rejection by the target app (e.g., input filters, maxLength)
  * is undetectable via this interface.
  */
+data class InputSurroundingText(
+    val text: CharSequence,
+    val selectionStart: Int,
+    val selectionEnd: Int,
+    val offset: Int,
+)
+
 interface TypeInputController {
     /**
      * Returns true if the input connection is available
@@ -75,7 +81,7 @@ interface TypeInputController {
         beforeLength: Int,
         afterLength: Int,
         flags: Int,
-    ): SurroundingText?
+    ): InputSurroundingText?
 
     /**
      * Performs a context menu action on the focused text field.
