@@ -1,8 +1,20 @@
 package com.danielealbano.androidremotecontrolmcp.data.model
 
+import android.Manifest
 import android.net.Uri
+import android.os.Build
 import android.provider.MediaStore
 import com.danielealbano.androidremotecontrolmcp.mcp.McpToolException
+
+private fun mediaReadPermission(api33Permission: String): String =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        api33Permission
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
+
+private fun downloadsReadPermission(): String? =
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) null else Manifest.permission.READ_EXTERNAL_STORAGE
 
 /**
  * A MediaStore collection backing (part of) a built-in storage location.
@@ -63,7 +75,7 @@ enum class BuiltinStorageLocation(
             listOf(
                 MediaCollection(
                     collectionUriProvider = { MediaStore.Downloads.EXTERNAL_CONTENT_URI },
-                    readMediaPermission = null,
+                    readMediaPermission = downloadsReadPermission(),
                     mimeTypePrefix = null,
                     typeLabel = "files",
                 ),
@@ -77,13 +89,13 @@ enum class BuiltinStorageLocation(
             listOf(
                 MediaCollection(
                     collectionUriProvider = { MediaStore.Images.Media.EXTERNAL_CONTENT_URI },
-                    readMediaPermission = android.Manifest.permission.READ_MEDIA_IMAGES,
+                    readMediaPermission = mediaReadPermission(Manifest.permission.READ_MEDIA_IMAGES),
                     mimeTypePrefix = "image/",
                     typeLabel = "images",
                 ),
                 MediaCollection(
                     collectionUriProvider = { MediaStore.Video.Media.EXTERNAL_CONTENT_URI },
-                    readMediaPermission = android.Manifest.permission.READ_MEDIA_VIDEO,
+                    readMediaPermission = mediaReadPermission(Manifest.permission.READ_MEDIA_VIDEO),
                     mimeTypePrefix = "video/",
                     typeLabel = "videos",
                 ),
@@ -97,7 +109,7 @@ enum class BuiltinStorageLocation(
             listOf(
                 MediaCollection(
                     collectionUriProvider = { MediaStore.Video.Media.EXTERNAL_CONTENT_URI },
-                    readMediaPermission = android.Manifest.permission.READ_MEDIA_VIDEO,
+                    readMediaPermission = mediaReadPermission(Manifest.permission.READ_MEDIA_VIDEO),
                     mimeTypePrefix = "video/",
                     typeLabel = "videos",
                 ),
@@ -111,7 +123,7 @@ enum class BuiltinStorageLocation(
             listOf(
                 MediaCollection(
                     collectionUriProvider = { MediaStore.Audio.Media.EXTERNAL_CONTENT_URI },
-                    readMediaPermission = android.Manifest.permission.READ_MEDIA_AUDIO,
+                    readMediaPermission = mediaReadPermission(Manifest.permission.READ_MEDIA_AUDIO),
                     mimeTypePrefix = "audio/",
                     typeLabel = "audio",
                 ),
@@ -125,13 +137,13 @@ enum class BuiltinStorageLocation(
             listOf(
                 MediaCollection(
                     collectionUriProvider = { MediaStore.Images.Media.EXTERNAL_CONTENT_URI },
-                    readMediaPermission = android.Manifest.permission.READ_MEDIA_IMAGES,
+                    readMediaPermission = mediaReadPermission(Manifest.permission.READ_MEDIA_IMAGES),
                     mimeTypePrefix = "image/",
                     typeLabel = "images",
                 ),
                 MediaCollection(
                     collectionUriProvider = { MediaStore.Video.Media.EXTERNAL_CONTENT_URI },
-                    readMediaPermission = android.Manifest.permission.READ_MEDIA_VIDEO,
+                    readMediaPermission = mediaReadPermission(Manifest.permission.READ_MEDIA_VIDEO),
                     mimeTypePrefix = "video/",
                     typeLabel = "videos",
                 ),
@@ -145,7 +157,7 @@ enum class BuiltinStorageLocation(
             listOf(
                 MediaCollection(
                     collectionUriProvider = { MediaStore.Audio.Media.EXTERNAL_CONTENT_URI },
-                    readMediaPermission = android.Manifest.permission.READ_MEDIA_AUDIO,
+                    readMediaPermission = mediaReadPermission(Manifest.permission.READ_MEDIA_AUDIO),
                     mimeTypePrefix = "audio/",
                     typeLabel = "audio",
                 ),

@@ -46,18 +46,13 @@ class AccessibilityNodeCacheImpl
 
         override fun clear() {
             val old = cache.getAndSet(emptyMap())
-            recycleEntries(old)
-            Log.d(TAG, "Cache cleared (recycled ${old.size} entries)")
+            // Do not recycle cached AccessibilityNodeInfo instances here. On API 29-32
+            // recycle() is still active and a concurrent action may hold one of these
+            // references after the atomic swap. Let GC reclaim the detached snapshot.
+            Log.d(TAG, "Cache cleared (dropped ${old.size} entries)")
         }
 
         override fun size(): Int = cache.get().size
-
-        private fun recycleEntries(entries: Map<String, CachedNode>) {
-            for ((_, cached) in entries) {
-                @Suppress("DEPRECATION")
-                cached.node.recycle()
-            }
-        }
 
         companion object {
             private const val TAG = "MCP:NodeCache"

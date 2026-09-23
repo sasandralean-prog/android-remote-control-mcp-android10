@@ -35,6 +35,11 @@
     <!-- Foreground service type for Event Channel (location for geofence/WiFi) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
+    <!-- Legacy shared-storage read access for Android 10-12L. -->
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <!-- Media read access (optional — enables "all files" mode for built-in storage locations) -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
