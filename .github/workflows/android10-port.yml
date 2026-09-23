@@ -1,0 +1,40 @@
+name: Android 10 Port Check
+
+on:
+  push:
+    branches: [android10-port]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-api29:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: true
+          fetch-depth: 0
+      - uses: actions/setup-java@v6
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Build ngrok Java API jar
+        run: |
+          cd vendor/ngrok-java
+          mvn package -pl ngrok-java -DskipTests --global-toolchains toolchains.xml -q
+        env:
+          JAVA_11_HOME: ${{ env.JAVA_HOME }}
+          JAVA_17_HOME: ${{ env.JAVA_HOME }}
+      - name: Android lint against minSdk 29
+        run: ./gradlew :app:lintGmsDebug
+      - name: Upload lint reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: android10-lint
+          path: app/build/reports/
+          retention-days: 14
